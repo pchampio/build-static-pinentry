@@ -250,7 +250,7 @@ rm -rf "$DESTDIR$PREFIX/share/info"
 distclean
 
 cd $DESTDIR/gnupg/bin
-cd pinentry-tty pinentry-tty.stripped
+cp pinentry-tty pinentry-tty.stripped
 strip pinentry-tty.stripped
 
 

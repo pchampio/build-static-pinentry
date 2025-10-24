@@ -1,0 +1,261 @@
+#!/bin/sh
+
+explain() {
+  printf "\033[1;34m${1}\033[0m\n"
+}
+
+explain2() {
+  printf "\033[1;33m|-- ${1}\033[0m\n"
+}
+
+success() {
+  printf "\033[1;32m${1}\033[0m\n"
+}
+
+success "[PINENTRY] Start"
+explain "compiling pinentry-tty"
+set -e
+
+MUSL_VERSION=1.2.5
+LIBASSUAN_VERSION=3.0.2
+LIBGPGERROR_VERSION=1.56
+PINENTRY_VERSION=1.3.2
+GNUPG_VERSION=2.4.3
+LIBGCRYPT_VERSION=1.10.3
+LIBKSBA_VERSION=1.6.5
+NPTH_VERSION=1.6
+
+DESTDIR=$HOME/.local/bin
+PREFIX="/gnupg"
+WORK="/tmp/work"
+PATH="/tmp/work/deps/bin:$PATH"
+NJOBS=$(( $(nproc) * 2 ))
+
+usage() {
+    cat <<EOF
+usage: $0 [-Cch] [-d destdir] [-j njobs] [-p prefix]
+  -C         clean all build files including downloads
+  -c         clean build files, preserving downloads
+  -h         print this help message
+EOF
+}
+
+clean() {
+    rm -rf "$WORK"
+}
+
+distclean() {
+    clean
+    rm -rf /tmp/download
+    success "[PINENTRY] Success compiling"
+}
+
+download() {
+    gnupgweb="https://gnupg.org/ftp/gcrypt"
+    mkdir -p /tmp/download
+    (
+        cd /tmp/download/
+        for url in \
+            "https://www.musl-libc.org/releases/musl-$MUSL_VERSION.tar.gz" \
+            "$gnupgweb/libassuan/libassuan-$LIBASSUAN_VERSION.tar.bz2" \
+            "$gnupgweb/libgpg-error/libgpg-error-$LIBGPGERROR_VERSION.tar.bz2" \
+            "$gnupgweb/pinentry/pinentry-$PINENTRY_VERSION.tar.bz2"
+            # "$gnupgweb/gnupg/gnupg-$GNUPG_VERSION.tar.bz2" \
+            # "$gnupgweb/libgcrypt/libgcrypt-$LIBGCRYPT_VERSION.tar.bz2" \
+            # "$gnupgweb/libksba/libksba-$LIBKSBA_VERSION.tar.bz2" \
+            # "$gnupgweb/npth/npth-$NPTH_VERSION.tar.bz2" \
+        do
+            file_name=$(basename "$url")
+            if [ ! -f "$file_name" ]; then
+                wget -q --show-progress "$url"
+            fi
+        done
+    )
+}
+
+while getopts cCDd:j:hp: name
+do
+    case $name in
+    c) clean; exit 0;;
+    C) distclean; exit 0;;
+    D) download; exit 0;;
+    h) usage; exit 0;;
+    j) NJOBS="$OPTARG";;
+    p) PREFIX="$OPTARG";;
+    d) DESTDIR="$OPTARG";;
+    ?) usage >&2; exit 1;;
+    esac
+done
+
+clean
+
+download
+
+mkdir -p "$DESTDIR$PREFIX" "$WORK/deps"
+
+tar -C "$WORK" -xzf /tmp/download/musl-$MUSL_VERSION.tar.gz
+(
+    mkdir -p "$WORK/musl"
+    cd "$WORK/musl"
+     ../musl-$MUSL_VERSION/configure --prefix="$WORK/deps" --enable-wrapper=gcc --syslibdir="$WORK/deps/lib"
+     make -kj$NJOBS
+     make install
+)
+
+# tar -C "$WORK" -xjf /tmp/download/npth-$NPTH_VERSION.tar.bz2
+# (
+#     mkdir -p "$WORK/npth"
+#     cd "$WORK/npth"
+#     ../npth-$NPTH_VERSION/configure \
+#         CC="$WORK/deps/bin/musl-gcc" \
+#         --prefix="$WORK/deps" \
+#         --enable-shared=no \
+#         --enable-static=yes
+#     make -kj$NJOBS
+#     make install
+# )
+
+tar -C "$WORK" -xjf /tmp/download/libgpg-error-$LIBGPGERROR_VERSION.tar.bz2
+(
+    mkdir -p "$WORK/libgpg-error"
+    cd "$WORK/libgpg-error"
+     ../libgpg-error-$LIBGPGERROR_VERSION/configure \
+        MAKEFLAGS="-j$(nproc)" \
+        CC="$WORK/deps/bin/musl-gcc" \
+        --prefix="$WORK/deps" \
+        --enable-shared=no \
+        --enable-static=yes \
+        --disable-nls \
+        --disable-doc \
+        --disable-languages
+     make -kj$NJOBS
+     make install
+)
+
+tar -C "$WORK" -xjf /tmp/download/libassuan-$LIBASSUAN_VERSION.tar.bz2
+(
+    mkdir -p "$WORK/libassuan"
+    cd "$WORK/libassuan"
+     ../libassuan-$LIBASSUAN_VERSION/configure \
+        MAKEFLAGS="-j$(nproc)" \
+        CC="$WORK/deps/bin/musl-gcc" \
+        --prefix="$WORK/deps" \
+        --enable-shared=no \
+        --enable-static=yes \
+        --with-libgpg-error-prefix="$WORK/deps"
+     make -kj$NJOBS
+     make install
+)
+
+# tar -C "$WORK" -xjf /tmp/download/libgcrypt-$LIBGCRYPT_VERSION.tar.bz2
+# (
+#     mkdir -p "$WORK/libgcrypt"
+#     cd "$WORK/libgcrypt"
+#     ../libgcrypt-$LIBGCRYPT_VERSION/configure \
+#         CC="$WORK/deps/bin/musl-gcc" \
+#         --prefix="$WORK/deps" \
+#         --enable-shared=no \
+#         --enable-static=yes \
+#         --disable-doc \
+#         --with-libgpg-error-prefix="$WORK/deps"
+#     make -kj$NJOBS
+#     make install
+# )
+
+# tar -C "$WORK" -xjf /tmp/download/libksba-$LIBKSBA_VERSION.tar.bz2
+# (
+#     mkdir -p "$WORK/libksba"
+#     cd "$WORK/libksba"
+#     ../libksba-$LIBKSBA_VERSION/configure \
+#         CC="$WORK/deps/bin/musl-gcc" \
+#         --prefix="$WORK/deps" \
+#         --enable-shared=no \
+#         --enable-static=yes \
+#         --with-libgpg-error-prefix="$WORK/deps"
+#     make -kj$NJOBS
+#     make install
+# )
+
+# tar -C "$WORK" -xjf /tmp/download/gnupg-$GNUPG_VERSION.tar.bz2
+# (
+#     mkdir -p "$WORK/gnupg"
+#     cd "$WORK/gnupg"
+#     ../gnupg-$GNUPG_VERSION/configure \
+#         CC="$WORK/deps/bin/musl-gcc" \
+#         LDFLAGS="-static -s" \
+#         --prefix="$PREFIX" \
+#         --with-libgpg-error-prefix="$WORK/deps" \
+#         --with-libgcrypt-prefix="$WORK/deps" \
+#         --with-libassuan-prefix="$WORK/deps" \
+#         --with-ksba-prefix="$WORK/deps" \
+#         --with-npth-prefix="$WORK/deps" \
+#         --with-agent-pgm="$PREFIX/bin/gpg-agent" \
+#         --with-pinentry-pgm="$PREFIX/bin/pinentry" \
+#         --disable-bzip2 \
+#         --disable-card-support \
+#         --disable-ccid-driver \
+#         --disable-dirmngr \
+#         --disable-gnutls \
+#         --disable-gpg-blowfish \
+#         --disable-gpg-cast5 \
+#         --disable-gpg-idea \
+#         --disable-gpg-md5 \
+#         --disable-gpg-rmd160 \
+#         --disable-gpgtar \
+#         --disable-ldap \
+#         --disable-libdns \
+#         --disable-nls \
+#         --disable-ntbtls \
+#         --disable-photo-viewers \
+#         --disable-regex \
+#         --disable-scdaemon \
+#         --disable-sqlite \
+#         --disable-wks-tools \
+#         --disable-zip
+#     make -kj$NJOBS
+#     make install DESTDIR="$DESTDIR"
+#     rm "$DESTDIR$PREFIX/bin/gpgscm"
+# )
+
+tar -C "$WORK" -xjf /tmp/download/pinentry-$PINENTRY_VERSION.tar.bz2
+(
+    mkdir -p "$WORK/pinentry"
+    cd "$WORK/pinentry"
+     ../pinentry-$PINENTRY_VERSION/configure \
+        CC="$WORK/deps/bin/musl-gcc" \
+        MAKEFLAGS="-j$(nproc)" \
+        LDFLAGS="-static" \
+        --prefix="$PREFIX" \
+        --with-libgpg-error-prefix="$WORK/deps" \
+        --with-libassuan-prefix="$WORK/deps" \
+        --disable-ncurses \
+        --disable-libsecret \
+        --enable-pinentry-tty \
+        --disable-pinentry-curses \
+        --disable-pinentry-emacs \
+        --disable-inside-emacs \
+        --disable-pinentry-gtk2 \
+        --disable-pinentry-gnome3 \
+        --disable-pinentry-qt \
+        --disable-pinentry-tqt \
+        --disable-pinentry-fltk
+     make -kj$NJOBS
+     make install DESTDIR="$DESTDIR"
+)
+
+rm -rf "$DESTDIR$PREFIX/sbin"
+rm -rf "$DESTDIR$PREFIX/share/doc"
+rm -rf "$DESTDIR$PREFIX/share/info"
+
+distclean
+
+cd $DESTDIR/gnupg/bin
+cd pinentry-tty pinentry-tty.stripped
+strip pinentry-tty.stripped
+
+
+gzip -c pinentry-tty > "pinentry-tty.gz"
+cp -f pinentry-tty.stripped pinentry-tty
+gzip -c pinentry-tty > "pinentry-tty.stripped.gz"
+
+success "[PINENTRY] Success gzip creation"

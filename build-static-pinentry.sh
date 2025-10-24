@@ -25,7 +25,7 @@ LIBGCRYPT_VERSION=1.10.3
 LIBKSBA_VERSION=1.6.5
 NPTH_VERSION=1.6
 
-DESTDIR=$HOME/.local/bin
+DESTDIR=/tmp/pinentry-build
 PREFIX="/gnupg"
 WORK="/tmp/work"
 PATH="/tmp/work/deps/bin:$PATH"
